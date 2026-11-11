@@ -28,7 +28,7 @@ export default function Home() {
         </CardHeader>
         <CardContent className="flex flex-col sm:flex-row gap-4 justify-center mt-4">
           <Link href={CONFIG.ROUTES.LOGIN} className="w-full sm:w-auto">
-            <Button size="lg" className="w-full">Get Started / Login</Button>
+            <Button size="lg" className="w-full">Login</Button>
           </Link>
           <Link href={CONFIG.ROUTES.REGISTER} className="w-full sm:w-auto">
             <Button size="lg" variant="outline" className="w-full">Create Account</Button>
