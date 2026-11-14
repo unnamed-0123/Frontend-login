@@ -17,26 +17,34 @@ export default function LoginPage() {
     setError('');
     setSubmitting(true);
 
+    const cleanUsername = username.trim();
+
     try {
       const data = await apiRequest<{
         access_token?: string;
+        accessToken?: string;
         token?: string;
         user?: { id?: number; username: string; role: string };
       }>('/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username: cleanUsername, password }),
       });
 
-      const token = data.access_token || data.token || 'session_active';
+      const token =
+        data.access_token || data.accessToken || data.token || 'session_active';
+
+      const savedRoles = JSON.parse(localStorage.getItem('hms_roles') || '{}');
+      const hospitalRole =
+        savedRoles[cleanUsername] || data.user?.role || 'patient';
+
       localStorage.setItem('hms_token', token);
       localStorage.setItem(
         'hms_user',
-        JSON.stringify(
-          data.user || {
-            username,
-            role: 'patient',
-          }
-        )
+        JSON.stringify({
+          id: data.user?.id,
+          username: data.user?.username || cleanUsername,
+          role: hospitalRole,
+        })
       );
 
       router.push('/');
@@ -79,7 +87,7 @@ export default function LoginPage() {
               required
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="dr_santos"
+              placeholder="dr_santos_01"
               className="mt-1.5 w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
             />
           </div>

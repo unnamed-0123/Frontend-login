@@ -18,24 +18,30 @@ export default function RegisterPage() {
     setError('');
     setSubmitting(true);
 
-    // Map hospital UI roles to standard backend ENUM values ('user' | 'admin')
-    const dbRole = role === 'admin' ? 'admin' : 'user';
+    const cleanUsername = username.trim();
 
     try {
       await apiRequest('/auth/register', {
         method: 'POST',
         body: JSON.stringify({
-          username: username.trim(),
+          username: cleanUsername,
           password,
-          role: dbRole,
         }),
       });
 
-      // Remember selected hospital role label for this username on the frontend
-      localStorage.setItem(`hms_role_${username.trim()}`, role);
+      // Store the selected hospital role locally for display after login
+      const savedRoles = JSON.parse(localStorage.getItem('hms_roles') || '{}');
+      savedRoles[cleanUsername] = role;
+      localStorage.setItem('hms_roles', JSON.stringify(savedRoles));
+
       router.push('/login');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Registration failed.');
+      const msg = err instanceof Error ? err.message : 'Registration failed.';
+      setError(
+        msg.toLowerCase().includes('internal server error')
+          ? 'Could not create account — try a different username (this one may already exist).'
+          : msg
+      );
     } finally {
       setSubmitting(false);
     }
