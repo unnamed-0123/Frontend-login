@@ -18,16 +18,21 @@ export default function RegisterPage() {
     setError('');
     setSubmitting(true);
 
+    // Map hospital UI roles to standard backend ENUM values ('user' | 'admin')
+    const dbRole = role === 'admin' ? 'admin' : 'user';
+
     try {
       await apiRequest('/auth/register', {
         method: 'POST',
         body: JSON.stringify({
-          username,
+          username: username.trim(),
           password,
-          role,
+          role: dbRole,
         }),
       });
 
+      // Remember selected hospital role label for this username on the frontend
+      localStorage.setItem(`hms_role_${username.trim()}`, role);
       router.push('/login');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed.');
@@ -68,7 +73,7 @@ export default function RegisterPage() {
               required
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="dr_santos"
+              placeholder="dr_santos_01"
               className="mt-1.5 w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
             />
           </div>
