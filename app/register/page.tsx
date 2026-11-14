@@ -1,152 +1,179 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { Lock, User, UserPlus, Loader2, ShieldCheck } from "lucide-react";
-import { useAuthGuard } from "@/hooks/useAuthGuard";
-import { apiClient } from "@/lib/api";
-import { CONFIG } from "@/lib/config";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { FormEvent, useState } from 'react';
+import { apiRequest } from '@/lib/api';
 
 export default function RegisterPage() {
   const router = useRouter();
-  const { isChecking } = useAuthGuard({ requireAuth: false });
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState<'PATIENT' | 'DOCTOR' | 'ADMIN'>('PATIENT');
+  const [specialization, setSpecialization] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  if (isChecking) return null;
-
-  const handleRegister = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setError("");
-    setLoading(true);
+    setError('');
+    setSubmitting(true);
 
     try {
-      await apiClient("/auth/register", {
-        method: "POST",
-        body: JSON.stringify({ username, password }),
+      await apiRequest('/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({
+          name,
+          email,
+          role,
+          ...(role === 'DOCTOR' ? { specialization } : {}),
+          password,
+        }),
       });
 
-      router.push(CONFIG.ROUTES.LOGIN);
-    } catch (err: any) {
-      setError(err.message || "Registration failed. Try again.");
+      router.push('/login');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Registration failed.');
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
   return (
-    <div className="min-h-screen grid lg:grid-cols-2 bg-background">
-      {/* Visual Side Banner */}
-      <div className="hidden lg:flex flex-col justify-between p-12 bg-slate-900 text-white relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-purple-600/20 to-indigo-500/20 pointer-events-none" />
-        <div className="relative z-10 flex items-center gap-2 font-bold text-xl">
-          <ShieldCheck className="h-6 w-6 text-indigo-400" />
-          <span>AppPortal</span>
-        </div>
-        <div className="relative z-10 space-y-4 max-w-md">
-          <h2 className="text-4xl font-extrabold tracking-tight leading-tight">
-            Join thousands of developers onboarded today.
-          </h2>
-          <p className="text-slate-400 text-sm">
-            Setup your account in seconds and get instant access to protected workspace routes.
+    <main className="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-slate-50 px-4 py-12">
+      <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
+        <div className="mb-6 text-center">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+            Create Hospital Account
+          </h1>
+          <p className="mt-1.5 text-sm text-slate-500">
+            Register as a patient, physician, or hospital administrator
           </p>
         </div>
-        <div className="relative z-10 text-xs text-slate-500">
-          © {new Date().getFullYear()} AppPortal. All rights reserved.
-        </div>
+
+        {error && (
+          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label
+              htmlFor="name"
+              className="block text-sm font-medium text-slate-700"
+            >
+              Full Name
+            </label>
+            <input
+              id="name"
+              type="text"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Dr. Maria Santos"
+              className="mt-1.5 w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="email"
+              className="block text-sm font-medium text-slate-700"
+            >
+              Email Address
+            </label>
+            <input
+              id="email"
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="name@medicore.org"
+              className="mt-1.5 w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="role"
+              className="block text-sm font-medium text-slate-700"
+            >
+              Portal Role
+            </label>
+            <select
+              id="role"
+              value={role}
+              onChange={(e) =>
+                setRole(e.target.value as 'PATIENT' | 'DOCTOR' | 'ADMIN')
+              }
+              className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
+            >
+              <option value="PATIENT">Patient</option>
+              <option value="DOCTOR">Doctor</option>
+              <option value="ADMIN">Admin / Staff</option>
+            </select>
+          </div>
+
+          {role === 'DOCTOR' && (
+            <div>
+              <label
+                htmlFor="specialization"
+                className="block text-sm font-medium text-slate-700"
+              >
+                Medical Specialization
+              </label>
+              <input
+                id="specialization"
+                type="text"
+                required
+                value={specialization}
+                onChange={(e) => setSpecialization(e.target.value)}
+                placeholder="e.g., Cardiology, Pediatrics, General Medicine"
+                className="mt-1.5 w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
+              />
+            </div>
+          )}
+
+          <div>
+            <label
+              htmlFor="password"
+              className="block text-sm font-medium text-slate-700"
+            >
+              Password
+            </label>
+            <input
+              id="password"
+              type="password"
+              required
+              minLength={6}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Minimum 6 characters"
+              className="mt-1.5 w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:opacity-60"
+          >
+            {submitting ? 'Creating account...' : 'Create Account'}
+          </button>
+        </form>
+
+        <p className="mt-6 text-center text-sm text-slate-600">
+          Already have an account?{' '}
+          <Link
+            href="/login"
+            className="font-semibold text-teal-600 hover:text-teal-700"
+          >
+            Login
+          </Link>
+        </p>
       </div>
-
-      {/* Form Area */}
-      <div className="flex items-center justify-center p-6 sm:p-12">
-        <Card className="w-full max-w-md border-border/40 shadow-xl">
-          <CardHeader className="space-y-1">
-            <CardTitle className="text-2xl font-bold tracking-tight">Create an account</CardTitle>
-            <CardDescription>
-              Enter your details below to register your account
-            </CardDescription>
-          </CardHeader>
-          <form onSubmit={handleRegister}>
-            <CardContent className="space-y-4">
-              {error && (
-                <div className="p-3 text-sm text-red-500 bg-red-500/10 rounded-lg border border-red-500/20 flex items-center gap-2">
-                  <span>{error}</span>
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <Label htmlFor="username">Choose a Username</Label>
-                <div className="relative">
-                  <User className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="username"
-                    type="text"
-                    placeholder="Username"
-                    className="pl-9"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="password">Create Password</Label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="password"
-                    type="password"
-                    placeholder="••••••••"
-                    className="pl-9"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-            </CardContent>
-
-            <CardFooter className="flex flex-col gap-4">
-              <Button type="submit" className="w-full font-medium" disabled={loading}>
-                {loading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Registering Account...
-                  </>
-                ) : (
-                  <>
-                    <UserPlus className="mr-2 h-4 w-4" />
-                    Register Account
-                  </>
-                )}
-              </Button>
-              <p className="text-sm text-center text-muted-foreground">
-                Already have an account?{" "}
-                <Link
-                  href={CONFIG.ROUTES.LOGIN}
-                  className="text-primary font-medium underline-offset-4 hover:underline"
-                >
-                  Log in
-                </Link>
-              </p>
-            </CardFooter>
-          </form>
-        </Card>
-      </div>
-    </div>
+    </main>
   );
 }

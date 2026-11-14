@@ -1,41 +1,26 @@
-import { CONFIG } from "./config";
-import { getAccessToken } from "./auth";
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL || 'https://midterm-2-c6vw.onrender.com';
 
-interface FetchOptions extends RequestInit {
-  requiresAuth?: boolean;
-}
-
-export async function apiClient<T>(
+export async function apiRequest<T>(
   endpoint: string,
-  options: FetchOptions = {}
+  options: RequestInit = {}
 ): Promise<T> {
-  const { requiresAuth = false, headers, ...restOptions } = options;
+  const token =
+    typeof window !== 'undefined' ? localStorage.getItem('hms_token') : null;
 
-  const defaultHeaders: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-
-  if (requiresAuth) {
-    const token = getAccessToken();
-    if (token) {
-      defaultHeaders["Authorization"] = `Bearer ${token}`;
-    }
-  }
-
-  const response = await fetch(`${CONFIG.API_BASE_URL}${endpoint}`, {
+  const res = await fetch(`${API_BASE_URL}${endpoint}`, {
+    ...options,
     headers: {
-      ...defaultHeaders,
-      ...headers,
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options.headers,
     },
-    ...restOptions,
   });
 
-  const data = await response.json();
+  const data = await res.json().catch(() => ({}));
 
-  if (!response.ok) {
-    const errorMessage =
-      Array.isArray(data.message) ? data.message.join(", ") : data.message || "An unexpected error occurred.";
-    throw new Error(errorMessage);
+  if (!res.ok) {
+    throw new Error(data.message || 'Request failed. Please check your credentials.');
   }
 
   return data as T;
