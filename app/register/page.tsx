@@ -2,20 +2,18 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { FormEvent, useState } from 'react';
+import { SyntheticEvent, useState } from 'react';
 import { apiRequest } from '@/lib/api';
 
 export default function RegisterPage() {
   const router = useRouter();
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [role, setRole] = useState<'PATIENT' | 'DOCTOR' | 'ADMIN'>('PATIENT');
-  const [specialization, setSpecialization] = useState('');
+  const [username, setUsername] = useState('');
+  const [role, setRole] = useState<'patient' | 'doctor' | 'admin'>('patient');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = async (e: FormEvent) => {
+  const handleSubmit = async (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError('');
     setSubmitting(true);
@@ -24,11 +22,9 @@ export default function RegisterPage() {
       await apiRequest('/auth/register', {
         method: 'POST',
         body: JSON.stringify({
-          name,
-          email,
-          role,
-          ...(role === 'DOCTOR' ? { specialization } : {}),
+          username,
           password,
+          role,
         }),
       });
 
@@ -61,36 +57,18 @@ export default function RegisterPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label
-              htmlFor="name"
+              htmlFor="username"
               className="block text-sm font-medium text-slate-700"
             >
-              Full Name
+              Username
             </label>
             <input
-              id="name"
+              id="username"
               type="text"
               required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Dr. Maria Santos"
-              className="mt-1.5 w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
-            />
-          </div>
-
-          <div>
-            <label
-              htmlFor="email"
-              className="block text-sm font-medium text-slate-700"
-            >
-              Email Address
-            </label>
-            <input
-              id="email"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="name@medicore.org"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="dr_santos"
               className="mt-1.5 w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
             />
           </div>
@@ -106,35 +84,15 @@ export default function RegisterPage() {
               id="role"
               value={role}
               onChange={(e) =>
-                setRole(e.target.value as 'PATIENT' | 'DOCTOR' | 'ADMIN')
+                setRole(e.target.value as 'patient' | 'doctor' | 'admin')
               }
               className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
             >
-              <option value="PATIENT">Patient</option>
-              <option value="DOCTOR">Doctor</option>
-              <option value="ADMIN">Admin / Staff</option>
+              <option value="patient">Patient</option>
+              <option value="doctor">Doctor</option>
+              <option value="admin">Admin / Staff</option>
             </select>
           </div>
-
-          {role === 'DOCTOR' && (
-            <div>
-              <label
-                htmlFor="specialization"
-                className="block text-sm font-medium text-slate-700"
-              >
-                Medical Specialization
-              </label>
-              <input
-                id="specialization"
-                type="text"
-                required
-                value={specialization}
-                onChange={(e) => setSpecialization(e.target.value)}
-                placeholder="e.g., Cardiology, Pediatrics, General Medicine"
-                className="mt-1.5 w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
-              />
-            </div>
-          )}
 
           <div>
             <label

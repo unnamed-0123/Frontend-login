@@ -2,17 +2,17 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { FormEvent, useState } from 'react';
+import { SyntheticEvent, useState } from 'react';
 import { apiRequest } from '@/lib/api';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = async (e: FormEvent) => {
+  const handleSubmit = async (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError('');
     setSubmitting(true);
@@ -21,10 +21,10 @@ export default function LoginPage() {
       const data = await apiRequest<{
         access_token?: string;
         token?: string;
-        user?: { name: string; email: string; role: 'PATIENT' | 'DOCTOR' | 'ADMIN' };
+        user?: { id?: number; username: string; role: string };
       }>('/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ username, password }),
       });
 
       const token = data.access_token || data.token || 'session_active';
@@ -33,9 +33,8 @@ export default function LoginPage() {
         'hms_user',
         JSON.stringify(
           data.user || {
-            name: email.split('@')[0],
-            email,
-            role: 'PATIENT',
+            username,
+            role: 'patient',
           }
         )
       );
@@ -69,18 +68,18 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label
-              htmlFor="email"
+              htmlFor="username"
               className="block text-sm font-medium text-slate-700"
             >
-              Email Address
+              Username
             </label>
             <input
-              id="email"
-              type="email"
+              id="username"
+              type="text"
               required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="doctor@medicore.org"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="dr_santos"
               className="mt-1.5 w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
             />
           </div>

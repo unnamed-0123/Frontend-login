@@ -4,10 +4,9 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 interface UserSession {
-  name: string;
-  email: string;
-  role: 'PATIENT' | 'DOCTOR' | 'ADMIN';
-  specialization?: string;
+  id?: number;
+  username: string;
+  role: string;
 }
 
 export default function HomePage() {
@@ -76,12 +75,13 @@ export default function HomePage() {
         <div className="flex flex-col justify-between gap-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm sm:flex-row sm:items-center">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">
-              Welcome back, {user.name}
+              Welcome back, {user.username}
             </h1>
             <p className="mt-1 text-sm text-slate-600">
               Signed in as{' '}
-              <span className="font-semibold text-teal-700">{user.role}</span>
-              {user.specialization ? ` • ${user.specialization}` : ''}
+              <span className="font-semibold uppercase text-teal-700">
+                {user.role}
+              </span>
             </p>
           </div>
           <span className="inline-flex w-fit items-center rounded-md bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
