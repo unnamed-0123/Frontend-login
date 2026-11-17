@@ -5,10 +5,12 @@ import { useRouter } from 'next/navigation';
 import { SyntheticEvent, useState } from 'react';
 import { apiRequest } from '@/lib/api';
 
+export type UserRole = 'patient' | 'doctor' | 'admin';
+
 export default function RegisterPage() {
   const router = useRouter();
   const [username, setUsername] = useState('');
-  const [role, setRole] = useState<'patient' | 'doctor' | 'admin'>('patient');
+  const [role, setRole] = useState<UserRole>('patient');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -26,13 +28,20 @@ export default function RegisterPage() {
         body: JSON.stringify({
           username: cleanUsername,
           password,
+          role,
         }),
       });
 
-      // Store the selected hospital role locally for display after login
-      const savedRoles = JSON.parse(localStorage.getItem('hms_roles') || '{}');
-      savedRoles[cleanUsername] = role;
+      // Save role mapped by lowercase username so casing differences never break lookup
+      const savedRoles: Record<string, UserRole> = JSON.parse(
+        localStorage.getItem('hms_roles') || '{}'
+      );
+      savedRoles[cleanUsername.toLowerCase()] = role;
       localStorage.setItem('hms_roles', JSON.stringify(savedRoles));
+
+      // Save the active user & role so Login/Dashboard can resolve it immediately
+      localStorage.setItem('hms_last_registered_user', cleanUsername.toLowerCase());
+      localStorage.setItem('hms_active_role', role);
 
       router.push('/login');
     } catch (err) {
@@ -94,9 +103,7 @@ export default function RegisterPage() {
             <select
               id="role"
               value={role}
-              onChange={(e) =>
-                setRole(e.target.value as 'patient' | 'doctor' | 'admin')
-              }
+              onChange={(e) => setRole(e.target.value as UserRole)}
               className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
             >
               <option value="patient">Patient</option>
