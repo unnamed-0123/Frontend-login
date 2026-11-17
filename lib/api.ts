@@ -1,26 +1,51 @@
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || 'https://midterm-2-c6vw.onrender.com';
+import { CONFIG } from "./config";
+import { clearTokens, getAccessToken } from "./auth";
 
-export async function apiRequest<T>(
+interface FetchOptions extends RequestInit {
+  requiresAuth?: boolean;
+}
+
+export async function apiClient<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: FetchOptions = {}
 ): Promise<T> {
-  const token =
-    typeof window !== 'undefined' ? localStorage.getItem('hms_token') : null;
+  const { requiresAuth = false, headers, ...restOptions } = options;
 
-  const res = await fetch(`${API_BASE_URL}${endpoint}`, {
-    ...options,
+  const defaultHeaders: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  if (requiresAuth) {
+    const token = getAccessToken();
+    if (token) {
+      defaultHeaders["Authorization"] = `Bearer ${token}`;
+    }
+  }
+
+  const response = await fetch(`${CONFIG.API_BASE_URL}${endpoint}`, {
     headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options.headers,
+      ...defaultHeaders,
+      ...headers,
     },
+    ...restOptions,
   });
 
-  const data = await res.json().catch(() => ({}));
+  if (response.status === 401 && requiresAuth) {
+    clearTokens();
+    if (typeof window !== "undefined") {
+      window.location.href = CONFIG.ROUTES.LOGIN;
+    }
+    throw new Error("Session expired. Please log in again.");
+  }
 
-  if (!res.ok) {
-    throw new Error(data.message || 'Request failed. Please check your credentials.');
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : {};
+
+  if (!response.ok) {
+    const errorMessage = Array.isArray(data.message)
+      ? data.message.join(", ")
+      : data.message || "An unexpected error occurred.";
+    throw new Error(errorMessage);
   }
 
   return data as T;
