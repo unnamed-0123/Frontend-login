@@ -1,19 +1,20 @@
-"use client";
+'use client';
 
-import React, { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import React, { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
-  LogOut,
   RefreshCw,
   Plus,
   Eye,
   Pencil,
   Trash2,
   X,
-} from "lucide-react";
-import { apiClient } from "@/lib/api";
-import { CONFIG } from "@/lib/config";
-import { clearTokens, isAuthenticated } from "@/lib/auth";
+} from 'lucide-react';
+import { apiClient } from '@/lib/api';
+import { CONFIG } from '@/lib/config';
+import { clearTokens, getAccessToken, isAuthenticated } from '@/lib/auth';
+
+type UserRole = 'patient' | 'doctor' | 'admin';
 
 interface Position {
   id: number;
@@ -24,26 +25,74 @@ interface Position {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const [username, setUsername] = useState<string>('User');
+  const [role, setRole] = useState<UserRole>('patient');
+
+  // Positions CRUD state (Admin)
   const [positions, setPositions] = useState<Position[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingPositions, setLoadingPositions] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Modal states
+  // Modals & Form state
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(
     null
   );
-
-  // Form states
-  const [positionCode, setPositionCode] = useState("");
-  const [positionName, setPositionName] = useState("");
+  const [positionCode, setPositionCode] = useState('');
+  const [positionName, setPositionName] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // Fetch all positions
+  // Resolve username & role on mount
+  useEffect(() => {
+    if (!isAuthenticated()) {
+      router.push(CONFIG.ROUTES.LOGIN);
+      return;
+    }
+
+    let resolvedUsername = 'User';
+    let tokenRole: UserRole | null = null;
+
+    const token = getAccessToken();
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        resolvedUsername =
+          payload.username || payload.name || payload.sub || 'User';
+        if (
+          payload.role &&
+          ['patient', 'doctor', 'admin'].includes(
+            String(payload.role).toLowerCase()
+          )
+        ) {
+          tokenRole = String(payload.role).toLowerCase() as UserRole;
+        }
+      } catch {
+        // Fallback if token payload cannot be decoded
+      }
+    }
+
+    setUsername(String(resolvedUsername));
+
+    // Look up role from token -> hms_roles map -> hms_active_role -> fallback
+    const savedRoles: Record<string, UserRole> = JSON.parse(
+      localStorage.getItem('hms_roles') || '{}'
+    );
+    const mappedRole = savedRoles[String(resolvedUsername).toLowerCase()];
+    const activeRole = localStorage.getItem('hms_active_role') as UserRole | null;
+
+    const finalRole: UserRole =
+      tokenRole || mappedRole || activeRole || 'patient';
+    setRole(finalRole);
+
+    if (finalRole === 'admin') {
+      fetchPositions();
+    }
+  }, [router]);
+
   const fetchPositions = async () => {
-    setLoading(true);
+    setLoadingPositions(true);
     setError(null);
     try {
       const data = await apiClient<Position[]>(CONFIG.ENDPOINTS.POSITIONS, {
@@ -51,55 +100,44 @@ export default function DashboardPage() {
       });
       setPositions(data);
     } catch (err: any) {
-      setError(err.message || "Failed to load positions.");
+      setError(err.message || 'Failed to load positions.');
     } finally {
-      setLoading(false);
+      setLoadingPositions(false);
     }
   };
 
-  useEffect(() => {
-    if (!isAuthenticated()) {
-      router.push(CONFIG.ROUTES.LOGIN);
-      return;
-    }
-    fetchPositions();
-  }, [router]);
-
-  // Handle Logout
   const handleLogout = () => {
     clearTokens();
     router.push(CONFIG.ROUTES.LOGIN);
   };
 
-  // Open Create Modal
+  // Position Modal Openers
   const openCreateModal = () => {
-    setPositionCode("");
-    setPositionName("");
+    setPositionCode('');
+    setPositionName('');
     setIsCreateOpen(true);
   };
 
-  // Open Edit Modal
-  const openEditModal = (position: Position) => {
-    setSelectedPosition(position);
-    setPositionCode(position.position_code);
-    setPositionName(position.position_name);
+  const openEditModal = (pos: Position) => {
+    setSelectedPosition(pos);
+    setPositionCode(pos.position_code);
+    setPositionName(pos.position_name);
     setIsEditOpen(true);
   };
 
-  // Open Read/View Modal
-  const openViewModal = (position: Position) => {
-    setSelectedPosition(position);
+  const openViewModal = (pos: Position) => {
+    setSelectedPosition(pos);
     setIsViewOpen(true);
   };
 
-  // Create Position
+  // Position CRUD Handlers
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
     try {
       await apiClient(CONFIG.ENDPOINTS.POSITIONS, {
-        method: "POST",
+        method: 'POST',
         requiresAuth: true,
         body: JSON.stringify({
           position_code: positionCode,
@@ -109,13 +147,12 @@ export default function DashboardPage() {
       setIsCreateOpen(false);
       fetchPositions();
     } catch (err: any) {
-      setError(err.message || "Failed to create position.");
+      setError(err.message || 'Failed to create position.');
     } finally {
       setSubmitting(false);
     }
   };
 
-  // Update Position
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPosition) return;
@@ -123,7 +160,7 @@ export default function DashboardPage() {
     setError(null);
     try {
       await apiClient(`${CONFIG.ENDPOINTS.POSITIONS}/${selectedPosition.id}`, {
-        method: "PATCH",
+        method: 'PATCH',
         requiresAuth: true,
         body: JSON.stringify({
           position_code: positionCode,
@@ -133,349 +170,89 @@ export default function DashboardPage() {
       setIsEditOpen(false);
       fetchPositions();
     } catch (err: any) {
-      setError(err.message || "Failed to update position.");
+      setError(err.message || 'Failed to update position.');
     } finally {
       setSubmitting(false);
     }
   };
 
-  // Delete Position
   const handleDelete = async (id: number) => {
-    if (!confirm("Are you sure you want to delete this position?")) return;
+    if (!confirm('Are you sure you want to delete this position?')) return;
     setError(null);
     try {
       await apiClient(`${CONFIG.ENDPOINTS.POSITIONS}/${id}`, {
-        method: "DELETE",
+        method: 'DELETE',
         requiresAuth: true,
       });
       fetchPositions();
     } catch (err: any) {
-      setError(err.message || "Failed to delete position.");
+      setError(err.message || 'Failed to delete position.');
     }
   };
 
   return (
-    <div className="min-h-screen bg-white text-gray-900 p-8 md:p-12">
-      <div className="max-w-5xl mx-auto">
-        {/* Header */}
-        <div className="flex items-start justify-between pb-6 border-b border-gray-200">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight text-gray-900 font-serif">
+    <div className="min-h-screen bg-slate-50 text-slate-900">
+      {/* Top Navbar (MediCore HMS) */}
+      <header className="border-b border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-600 text-lg font-bold text-white">
+              +
+            </div>
+            <span className="text-lg font-bold tracking-tight text-slate-900">
+              MediCore HMS
+            </span>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <span className="text-sm font-medium text-slate-600">
               Dashboard
+            </span>
+            <button
+              onClick={handleLogout}
+              className="rounded-lg border border-slate-200 bg-white px-4 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 cursor-pointer"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="mx-auto max-w-6xl px-6 py-8 space-y-6">
+        {/* Welcome Banner */}
+        <div className="flex flex-col justify-between gap-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm sm:flex-row sm:items-center">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">
+              Welcome back, {username}
             </h1>
-            <p className="mt-1 text-sm text-gray-500">
-              Manage organization positions
+            <p className="mt-1 text-sm text-slate-600">
+              Signed in as{' '}
+              <span className="font-bold uppercase text-teal-600">
+                {role}
+              </span>
             </p>
           </div>
-          <button
-            onClick={handleLogout}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors cursor-pointer"
-          >
-            <LogOut className="w-4 h-4" />
-            Logout
-          </button>
+          <span className="inline-flex w-fit items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+            System Online
+          </span>
         </div>
 
-        {/* Error Alert */}
-        {error && (
-          <div className="mt-6 p-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg">
-            {error}
-          </div>
-        )}
-
-        {/* Main Card */}
-        <div className="mt-8 bg-white border border-gray-200 rounded-xl shadow-sm">
-          {/* Card Header */}
-          <div className="p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-gray-100">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900 font-serif">
-                Positions
-              </h2>
-              <p className="text-sm text-gray-500">
-                A list of all positions stored in the backend.
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={fetchPositions}
-                disabled={loading}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 cursor-pointer"
-              >
-                <RefreshCw
-                  className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
-                />
-                Read / Refresh
-              </button>
-              <button
-                onClick={openCreateModal}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-neutral-900 rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                Create Position
-              </button>
-            </div>
-          </div>
-
-          {/* Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-gray-200 text-xs font-semibold text-gray-600">
-                  <th className="py-3.5 px-6">ID</th>
-                  <th className="py-3.5 px-6">Position Code</th>
-                  <th className="py-3.5 px-6">Position Name</th>
-                  <th className="py-3.5 px-6">Created At</th>
-                  <th className="py-3.5 px-6 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 text-sm">
-                {loading ? (
-                  <tr>
-                    <td
-                      colSpan={5}
-                      className="py-8 text-center text-gray-500"
-                    >
-                      Loading positions...
-                    </td>
-                  </tr>
-                ) : positions.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={5}
-                      className="py-8 text-center text-gray-500"
-                    >
-                      No positions found. Click &quot;Create Position&quot; to
-                      add one.
-                    </td>
-                  </tr>
-                ) : (
-                  positions.map((pos) => (
-                    <tr
-                      key={pos.id}
-                      className="hover:bg-gray-50/60 transition-colors"
-                    >
-                      <td className="py-4 px-6 text-gray-700">{pos.id}</td>
-                      <td className="py-4 px-6 text-gray-900">
-                        {pos.position_code}
-                      </td>
-                      <td className="py-4 px-6 text-gray-900">
-                        {pos.position_name}
-                      </td>
-                      <td className="py-4 px-6 text-gray-700">
-                        {pos.created_at
-                          ? new Date(pos.created_at).toLocaleDateString("en-US")
-                          : "-"}
-                      </td>
-                      <td className="py-4 px-6">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => openViewModal(pos)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-md hover:bg-gray-50 transition-colors cursor-pointer"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                            Read
-                          </button>
-                          <button
-                            onClick={() => openEditModal(pos)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-md hover:bg-gray-50 transition-colors cursor-pointer"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                            Update
-                          </button>
-                          <button
-                            onClick={() => handleDelete(pos.id)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 rounded-md hover:bg-red-100 transition-colors cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      {/* Create Position Modal */}
-      {isCreateOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md bg-white rounded-xl shadow-lg border border-gray-200 p-6">
-            <div className="flex items-center justify-between pb-4 border-b border-gray-100">
-              <h3 className="text-lg font-semibold text-gray-900">
-                Create Position
-              </h3>
-              <button
-                onClick={() => setIsCreateOpen(false)}
-                className="text-gray-400 hover:text-gray-600 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <form onSubmit={handleCreate} className="mt-4 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Position Code
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g., Pres"
-                  value={positionCode}
-                  onChange={(e) => setPositionCode(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-900"
-                />
+        {/* =====================================================
+            ROLE 1: ADMIN VIEW (Stats + Positions Management)
+           ===================================================== */}
+        {role === 'admin' && (
+          <>
+            {/* Admin Summary Cards */}
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+              <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+                <p className="text-sm font-medium text-slate-500">
+                  Scheduled Appointments
+                </p>
+                <p className="mt-2 text-3xl font-bold text-slate-900">12</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  4 pending confirmation
+                </p>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Position Name
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g., President"
-                  value={positionName}
-                  onChange={(e) => setPositionName(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-900"
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateOpen(false)}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-4 py-2 text-sm font-medium text-white bg-neutral-900 rounded-lg hover:bg-neutral-800 disabled:opacity-50 cursor-pointer"
-                >
-                  {submitting ? "Creating..." : "Create"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Update Position Modal */}
-      {isEditOpen && selectedPosition && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md bg-white rounded-xl shadow-lg border border-gray-200 p-6">
-            <div className="flex items-center justify-between pb-4 border-b border-gray-100">
-              <h3 className="text-lg font-semibold text-gray-900">
-                Update Position
-              </h3>
-              <button
-                onClick={() => setIsEditOpen(false)}
-                className="text-gray-400 hover:text-gray-600 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <form onSubmit={handleUpdate} className="mt-4 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Position Code
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={positionCode}
-                  onChange={(e) => setPositionCode(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-900"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Position Name
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={positionName}
-                  onChange={(e) => setPositionName(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-900"
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsEditOpen(false)}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-4 py-2 text-sm font-medium text-white bg-neutral-900 rounded-lg hover:bg-neutral-800 disabled:opacity-50 cursor-pointer"
-                >
-                  {submitting ? "Updating..." : "Save Changes"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Read / View Position Modal */}
-      {isViewOpen && selectedPosition && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md bg-white rounded-xl shadow-lg border border-gray-200 p-6">
-            <div className="flex items-center justify-between pb-4 border-b border-gray-100">
-              <h3 className="text-lg font-semibold text-gray-900">
-                Position Details
-              </h3>
-              <button
-                onClick={() => setIsViewOpen(false)}
-                className="text-gray-400 hover:text-gray-600 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="mt-4 space-y-3 text-sm">
-              <div className="flex justify-between py-2 border-b border-gray-100">
-                <span className="font-medium text-gray-500">ID</span>
-                <span className="text-gray-900">{selectedPosition.id}</span>
-              </div>
-              <div className="flex justify-between py-2 border-b border-gray-100">
-                <span className="font-medium text-gray-500">Position Code</span>
-                <span className="text-gray-900">
-                  {selectedPosition.position_code}
-                </span>
-              </div>
-              <div className="flex justify-between py-2 border-b border-gray-100">
-                <span className="font-medium text-gray-500">Position Name</span>
-                <span className="text-gray-900">
-                  {selectedPosition.position_name}
-                </span>
-              </div>
-              <div className="flex justify-between py-2">
-                <span className="font-medium text-gray-500">Created At</span>
-                <span className="text-gray-900">
-                  {selectedPosition.created_at
-                    ? new Date(selectedPosition.created_at).toLocaleString()
-                    : "-"}
-                </span>
-              </div>
-            </div>
-            <div className="flex justify-end mt-6">
-              <button
-                onClick={() => setIsViewOpen(false)}
-                className="px-4 py-2 text-sm font-medium text-white bg-neutral-900 rounded-lg hover:bg-neutral-800 cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+              <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+                <p className="text-
