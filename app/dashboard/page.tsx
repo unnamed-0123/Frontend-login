@@ -20,7 +20,7 @@ interface Position {
 }
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+  process.env.NEXT_PUBLIC_API_URL || "https://midterm-2-c6vw.onrender.com/";
 
 export default function DashboardPage() {
   const router = useRouter();
