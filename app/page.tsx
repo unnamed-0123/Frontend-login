@@ -25,7 +25,7 @@ export default function HomePage() {
         );
 
         const localRole =
-          savedRoles[parsed.username.toLowerCase()] ||
+          savedRoles[parsed.username.trim().toLowerCase()] ||
           savedRoles[parsed.username];
 
         const resolvedRole =
@@ -104,9 +104,18 @@ export default function HomePage() {
               </span>
             </p>
           </div>
-          <span className="inline-flex w-fit items-center rounded-md bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
-            System Online
-          </span>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="inline-flex w-fit items-center rounded-md bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
+              System Online
+            </span>
+            <Link
+              href="/dashboard"
+              className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700"
+            >
+              Open Dashboard
+            </Link>
+          </div>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-3">
