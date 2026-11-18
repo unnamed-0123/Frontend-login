@@ -181,11 +181,20 @@ export default function DashboardPage() {
         payload.password = password;
       }
 
-      const res = await fetch(`${API_BASE_URL}/users/${selectedUser.id}`, {
-        method: "PATCH",
+      // Try PUT first (standard in NestJS), fallback to PATCH if needed
+      let res = await fetch(`${API_BASE_URL}/users/${selectedUser.id}`, {
+        method: "PUT",
         headers: getAuthHeaders(),
         body: JSON.stringify(payload),
       });
+
+      if (res.status === 404 || res.status === 405) {
+        res = await fetch(`${API_BASE_URL}/users/${selectedUser.id}`, {
+          method: "PATCH",
+          headers: getAuthHeaders(),
+          body: JSON.stringify(payload),
+        });
+      }
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
