@@ -11,8 +11,11 @@ import {
   Trash2,
   X,
   ShieldCheck,
+  Stethoscope,
   User as UserIcon,
 } from "lucide-react";
+
+type DisplayRole = "patient" | "doctor" | "admin";
 
 interface User {
   id: number;
@@ -28,6 +31,7 @@ export default function DashboardPage() {
   const router = useRouter();
 
   const [users, setUsers] = useState<User[]>([]);
+  const [roleMap, setRoleMap] = useState<Record<string, DisplayRole>>({});
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,8 +44,36 @@ export default function DashboardPage() {
   // Form states
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<"user" | "admin">("admin");
+  const [role, setRole] = useState<DisplayRole>("patient");
   const [submitting, setSubmitting] = useState(false);
+
+  const loadLocalRoles = (): Record<string, DisplayRole> => {
+    if (typeof window === "undefined") return {};
+    try {
+      return JSON.parse(localStorage.getItem("hms_roles") || "{}");
+    } catch {
+      return {};
+    }
+  };
+
+  const saveLocalRole = (targetUsername: string, targetRole: DisplayRole) => {
+    if (typeof window === "undefined") return;
+    const current = loadLocalRoles();
+    current[targetUsername.trim().toLowerCase()] = targetRole;
+    localStorage.setItem("hms_roles", JSON.stringify(current));
+    setRoleMap({ ...current });
+  };
+
+  const resolveDisplayRole = (user: User): DisplayRole => {
+    const mapped =
+      roleMap[user.username.trim().toLowerCase()] || roleMap[user.username];
+    if (mapped === "admin" || mapped === "doctor" || mapped === "patient") {
+      return mapped;
+    }
+    if (user.role === "admin") return "admin";
+    if (user.role === "doctor") return "doctor";
+    return "patient";
+  };
 
   const getToken = () => {
     if (typeof window !== "undefined") {
@@ -66,6 +98,7 @@ export default function DashboardPage() {
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setRoleMap(loadLocalRoles());
     try {
       const res = await fetch(`${API_BASE_URL}/users`, {
         method: "GET",
@@ -94,21 +127,20 @@ export default function DashboardPage() {
     fetchUsers();
   }, [fetchUsers]);
 
-  // LOGOUT
+  // LOGOUT (keeps hms_roles intact so frontend role labels persist across logins)
   const handleLogout = () => {
     localStorage.removeItem("hms_token");
     localStorage.removeItem("hms_user");
-    localStorage.removeItem("hms_roles");
     localStorage.removeItem("token");
     localStorage.removeItem("access_token");
     router.push("/login");
   };
 
-  // CREATE USER / ADMIN
+  // CREATE ACCOUNT
   const openCreateModal = () => {
     setUsername("");
     setPassword("");
-    setRole("admin");
+    setRole("patient");
     setIsCreateOpen(true);
   };
 
@@ -116,13 +148,16 @@ export default function DashboardPage() {
     e.preventDefault();
     setSubmitting(true);
     try {
+      const cleanUsername = username.trim();
+      const backendRole = role === "admin" ? "admin" : "user";
+
       let res = await fetch(`${API_BASE_URL}/users`, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify({
-          username,
+          username: cleanUsername,
           password,
-          role,
+          role: backendRole,
         }),
       });
 
@@ -131,39 +166,40 @@ export default function DashboardPage() {
           method: "POST",
           headers: getAuthHeaders(),
           body: JSON.stringify({
-            username,
+            username: cleanUsername,
             password,
-            role,
+            role: backendRole,
           }),
         });
       }
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.message || "Failed to create user");
+        throw new Error(errData.message || "Failed to create account");
       }
 
+      saveLocalRole(cleanUsername, role);
       setIsCreateOpen(false);
       await fetchUsers();
     } catch (err: any) {
-      alert(err.message || "Error creating user");
+      alert(err.message || "Error creating account");
     } finally {
       setSubmitting(false);
     }
   };
 
-  // VIEW SINGLE USER
+  // VIEW SINGLE ACCOUNT
   const handleRead = (user: User) => {
     setSelectedUser(user);
     setIsViewOpen(true);
   };
 
-  // UPDATE USER
+  // UPDATE ACCOUNT
   const openEditModal = (user: User) => {
     setSelectedUser(user);
     setUsername(user.username);
     setPassword("");
-    setRole(user.role === "admin" ? "admin" : "user");
+    setRole(resolveDisplayRole(user));
     setIsEditOpen(true);
   };
 
@@ -173,15 +209,16 @@ export default function DashboardPage() {
 
     setSubmitting(true);
     try {
+      const cleanUsername = username.trim();
+      const backendRole = role === "admin" ? "admin" : "user";
       const payload: Record<string, string> = {
-        username,
-        role,
+        username: cleanUsername,
+        role: backendRole,
       };
       if (password.trim() !== "") {
         payload.password = password;
       }
 
-      // Try PUT first (standard in NestJS), fallback to PATCH if needed
       let res = await fetch(`${API_BASE_URL}/users/${selectedUser.id}`, {
         method: "PUT",
         headers: getAuthHeaders(),
@@ -198,23 +235,24 @@ export default function DashboardPage() {
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.message || "Failed to update user");
+        throw new Error(errData.message || "Failed to update account");
       }
 
+      saveLocalRole(cleanUsername, role);
       setIsEditOpen(false);
       setSelectedUser(null);
       await fetchUsers();
     } catch (err: any) {
-      alert(err.message || "Error updating user");
+      alert(err.message || "Error updating account");
     } finally {
       setSubmitting(false);
     }
   };
 
-  // DELETE USER
+  // DELETE ACCOUNT
   const handleDelete = async (id: number) => {
     const confirmed = window.confirm(
-      `Are you sure you want to delete User #${id}?`
+      `Are you sure you want to delete Account #${id}?`
     );
     if (!confirmed) return;
 
@@ -224,11 +262,11 @@ export default function DashboardPage() {
         headers: getAuthHeaders(),
       });
 
-      if (!res.ok) throw new Error(`Failed to delete User #${id}`);
+      if (!res.ok) throw new Error(`Failed to delete Account #${id}`);
 
       await fetchUsers();
     } catch (err: any) {
-      alert(err.message || "Error deleting user");
+      alert(err.message || "Error deleting account");
     }
   };
 
@@ -237,6 +275,31 @@ export default function DashboardPage() {
     const date = new Date(dateString);
     if (isNaN(date.getTime())) return dateString;
     return date.toLocaleDateString("en-US");
+  };
+
+  const renderRoleBadge = (displayRole: DisplayRole) => {
+    if (displayRole === "admin") {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+          <ShieldCheck className="w-3.5 h-3.5" />
+          admin
+        </span>
+      );
+    }
+    if (displayRole === "doctor") {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+          <Stethoscope className="w-3.5 h-3.5" />
+          doctor
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+        <UserIcon className="w-3.5 h-3.5" />
+        patient
+      </span>
+    );
   };
 
   return (
@@ -249,7 +312,7 @@ export default function DashboardPage() {
               Dashboard
             </h1>
             <p className="text-sm text-gray-500 mt-1">
-              Manage system users and admin accounts
+              Manage patients, doctors, and admin accounts
             </p>
           </div>
 
@@ -268,11 +331,10 @@ export default function DashboardPage() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
             <div>
               <h2 className="text-lg font-semibold text-gray-900">
-                Users &amp; Admins
+                Patients, Doctors &amp; Admins
               </h2>
               <p className="text-sm text-gray-500">
-                A list of all registered users and administrators stored in the
-                backend.
+                A list of all registered accounts stored in the system.
               </p>
             </div>
 
@@ -293,7 +355,7 @@ export default function DashboardPage() {
                 className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-neutral-900 hover:bg-neutral-800 rounded-lg transition-colors cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
-                Add User / Admin
+                Add Account
               </button>
             </div>
           </div>
@@ -324,7 +386,7 @@ export default function DashboardPage() {
                       colSpan={5}
                       className="py-8 text-center text-gray-400"
                     >
-                      Loading users...
+                      Loading accounts...
                     </td>
                   </tr>
                 ) : users.length === 0 ? (
@@ -333,7 +395,7 @@ export default function DashboardPage() {
                       colSpan={5}
                       className="py-8 text-center text-gray-400"
                     >
-                      No users found. Click &quot;Add User / Admin&quot; to
+                      No accounts found. Click &quot;Add Account&quot; to
                       create one.
                     </td>
                   </tr>
@@ -350,17 +412,7 @@ export default function DashboardPage() {
                         {user.username}
                       </td>
                       <td className="py-3.5 px-4">
-                        {user.role === "admin" ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            <ShieldCheck className="w-3.5 h-3.5" />
-                            admin
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
-                            <UserIcon className="w-3.5 h-3.5" />
-                            {user.role || "user"}
-                          </span>
-                        )}
+                        {renderRoleBadge(resolveDisplayRole(user))}
                       </td>
                       <td className="py-3.5 px-4 text-gray-600">
                         {formatDate(user.created_at)}
@@ -401,13 +453,13 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* CREATE USER / ADMIN MODAL */}
+      {/* CREATE ACCOUNT MODAL */}
       {isCreateOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-xl shadow-lg w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">
-                Add User / Admin
+                Add Account
               </h3>
               <button
                 onClick={() => setIsCreateOpen(false)}
@@ -427,7 +479,7 @@ export default function DashboardPage() {
                   required
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="e.g., admin02"
+                  placeholder="e.g., dr_DH"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900"
                 />
               </div>
@@ -452,11 +504,12 @@ export default function DashboardPage() {
                 </label>
                 <select
                   value={role}
-                  onChange={(e) => setRole(e.target.value as "user" | "admin")}
+                  onChange={(e) => setRole(e.target.value as DisplayRole)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-neutral-900"
                 >
-                  <option value="admin">Admin (admin)</option>
-                  <option value="user">User (user)</option>
+                  <option value="patient">Patient</option>
+                  <option value="doctor">Doctor</option>
+                  <option value="admin">Admin</option>
                 </select>
               </div>
 
@@ -481,13 +534,13 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* UPDATE USER MODAL */}
+      {/* UPDATE ACCOUNT MODAL */}
       {isEditOpen && selectedUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-xl shadow-lg w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">
-                Update User #{selectedUser.id}
+                Update Account #{selectedUser.id}
               </h3>
               <button
                 onClick={() => setIsEditOpen(false)}
@@ -533,11 +586,12 @@ export default function DashboardPage() {
                 </label>
                 <select
                   value={role}
-                  onChange={(e) => setRole(e.target.value as "user" | "admin")}
+                  onChange={(e) => setRole(e.target.value as DisplayRole)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-neutral-900"
                 >
-                  <option value="admin">Admin (admin)</option>
-                  <option value="user">User (user)</option>
+                  <option value="patient">Patient</option>
+                  <option value="doctor">Doctor</option>
+                  <option value="admin">Admin</option>
                 </select>
               </div>
 
@@ -554,7 +608,7 @@ export default function DashboardPage() {
                   disabled={submitting}
                   className="px-4 py-2 text-sm font-medium text-white bg-neutral-900 hover:bg-neutral-800 rounded-lg cursor-pointer disabled:opacity-50"
                 >
-                  {submitting ? "Updating..." : "Update User"}
+                  {submitting ? "Updating..." : "Update Account"}
                 </button>
               </div>
             </form>
@@ -568,7 +622,7 @@ export default function DashboardPage() {
           <div className="bg-white rounded-xl shadow-lg w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">
-                User Details
+                Account Details
               </h3>
               <button
                 onClick={() => setIsViewOpen(false)}
@@ -590,7 +644,7 @@ export default function DashboardPage() {
               <div className="flex justify-between py-2 border-b border-gray-100">
                 <span className="font-medium text-gray-500">Role</span>
                 <span className="font-semibold text-gray-900">
-                  {selectedUser.role}
+                  {resolveDisplayRole(selectedUser)}
                 </span>
               </div>
               <div className="flex justify-between py-2">

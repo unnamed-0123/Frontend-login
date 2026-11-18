@@ -19,7 +19,27 @@ export default function HomePage() {
 
     if (token && storedUser) {
       try {
-        setUser(JSON.parse(storedUser));
+        const parsed: UserSession = JSON.parse(storedUser);
+        const savedRoles: Record<string, string> = JSON.parse(
+          localStorage.getItem('hms_roles') || '{}'
+        );
+
+        const localRole =
+          savedRoles[parsed.username.toLowerCase()] ||
+          savedRoles[parsed.username];
+
+        const resolvedRole =
+          localRole ||
+          (parsed.role === 'admin'
+            ? 'admin'
+            : parsed.role === 'doctor'
+            ? 'doctor'
+            : 'patient');
+
+        setUser({
+          ...parsed,
+          role: resolvedRole,
+        });
       } catch {
         localStorage.removeItem('hms_user');
       }
