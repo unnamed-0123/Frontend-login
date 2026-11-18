@@ -9,6 +9,16 @@ interface UserSession {
   role: string;
 }
 
+function getRoleFromToken(token: string | null): string | null {
+  if (!token) return null;
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.role || null;
+  } catch {
+    return null;
+  }
+}
+
 export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<UserSession | null>(null);
@@ -24,17 +34,17 @@ export default function HomePage() {
           localStorage.getItem('hms_roles') || '{}'
         );
 
+        const tokenRole = getRoleFromToken(token);
         const localRole =
           savedRoles[parsed.username.trim().toLowerCase()] ||
           savedRoles[parsed.username];
 
-        const resolvedRole =
-          localRole ||
-          (parsed.role === 'admin'
-            ? 'admin'
-            : parsed.role === 'doctor'
-            ? 'doctor'
-            : 'patient');
+        let resolvedRole = 'patient';
+        if (tokenRole === 'admin' || parsed.role === 'admin' || localRole === 'admin') {
+          resolvedRole = 'admin';
+        } else if (localRole === 'doctor' || tokenRole === 'doctor' || parsed.role === 'doctor') {
+          resolvedRole = 'doctor';
+        }
 
         setUser({
           ...parsed,
