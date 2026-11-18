@@ -46,7 +46,9 @@ export default function DashboardPage() {
   const getToken = () => {
     if (typeof window !== "undefined") {
       return (
-        localStorage.getItem("token") || localStorage.getItem("access_token")
+        localStorage.getItem("hms_token") ||
+        localStorage.getItem("token") ||
+        localStorage.getItem("access_token")
       );
     }
     return null;
@@ -94,6 +96,9 @@ export default function DashboardPage() {
 
   // LOGOUT
   const handleLogout = () => {
+    localStorage.removeItem("hms_token");
+    localStorage.removeItem("hms_user");
+    localStorage.removeItem("hms_roles");
     localStorage.removeItem("token");
     localStorage.removeItem("access_token");
     router.push("/login");
@@ -111,7 +116,6 @@ export default function DashboardPage() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      // Tries POST /users first; falls back to POST /auth/register if /users is GET-only
       let res = await fetch(`${API_BASE_URL}/users`, {
         method: "POST",
         headers: getAuthHeaders(),
