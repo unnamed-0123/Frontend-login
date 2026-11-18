@@ -17,6 +17,8 @@ export default function Navbar() {
   const handleLogout = () => {
     localStorage.removeItem('hms_token');
     localStorage.removeItem('hms_user');
+    localStorage.removeItem('token');
+    localStorage.removeItem('access_token');
     setIsAuthenticated(false);
     router.push('/login');
   };
@@ -58,13 +60,27 @@ export default function Navbar() {
             <>
               <Link
                 href="/"
-                className="text-slate-600 transition-colors hover:text-slate-900"
+                className={`rounded-md px-3 py-1.5 transition-colors ${
+                  pathname === '/'
+                    ? 'bg-slate-100 text-slate-900'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Portal
+              </Link>
+              <Link
+                href="/dashboard"
+                className={`rounded-md px-3 py-1.5 transition-colors ${
+                  pathname === '/dashboard'
+                    ? 'bg-teal-50 text-teal-700'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
               >
                 Dashboard
               </Link>
               <button
                 onClick={handleLogout}
-                className="rounded-md border border-slate-300 px-3 py-1.5 text-slate-700 transition-colors hover:bg-slate-100"
+                className="rounded-md border border-slate-300 px-3 py-1.5 text-slate-700 transition-colors hover:bg-slate-100 cursor-pointer"
               >
                 Logout
               </button>
