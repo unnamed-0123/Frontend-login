@@ -10,13 +10,15 @@ import {
   Pencil,
   Trash2,
   X,
+  ShieldCheck,
+  User as UserIcon,
 } from "lucide-react";
 
-interface Position {
+interface User {
   id: number;
-  position_code: string;
-  position_name: string;
-  created_at: string;
+  username: string;
+  role: string;
+  created_at?: string;
 }
 
 const API_BASE_URL =
@@ -25,7 +27,7 @@ const API_BASE_URL =
 export default function DashboardPage() {
   const router = useRouter();
 
-  const [positions, setPositions] = useState<Position[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,18 +35,19 @@ export default function DashboardPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isViewOpen, setIsViewOpen] = useState(false);
-  const [selectedPosition, setSelectedPosition] = useState<Position | null>(
-    null
-  );
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
 
   // Form states
-  const [positionCode, setPositionCode] = useState("");
-  const [positionName, setPositionName] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState<"user" | "admin">("admin");
   const [submitting, setSubmitting] = useState(false);
 
   const getToken = () => {
     if (typeof window !== "undefined") {
-      return localStorage.getItem("token") || localStorage.getItem("access_token");
+      return (
+        localStorage.getItem("token") || localStorage.getItem("access_token")
+      );
     }
     return null;
   };
@@ -57,12 +60,12 @@ export default function DashboardPage() {
     };
   };
 
-  // READ / FETCH ALL POSITIONS
-  const fetchPositions = useCallback(async () => {
+  // READ / FETCH ALL USERS
+  const fetchUsers = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/positions`, {
+      const res = await fetch(`${API_BASE_URL}/users`, {
         method: "GET",
         headers: getAuthHeaders(),
       });
@@ -73,21 +76,21 @@ export default function DashboardPage() {
       }
 
       if (!res.ok) {
-        throw new Error(`Failed to fetch positions (${res.status})`);
+        throw new Error(`Failed to fetch users (${res.status})`);
       }
 
       const data = await res.json();
-      setPositions(Array.isArray(data) ? data : data.data || []);
+      setUsers(Array.isArray(data) ? data : data.data || []);
     } catch (err: any) {
-      setError(err.message || "Error loading positions from backend.");
+      setError(err.message || "Error loading users from backend.");
     } finally {
       setLoading(false);
     }
   }, [router]);
 
   useEffect(() => {
-    fetchPositions();
-  }, [fetchPositions]);
+    fetchUsers();
+  }, [fetchUsers]);
 
   // LOGOUT
   const handleLogout = () => {
@@ -96,10 +99,11 @@ export default function DashboardPage() {
     router.push("/login");
   };
 
-  // CREATE POSITION
+  // CREATE USER / ADMIN
   const openCreateModal = () => {
-    setPositionCode("");
-    setPositionName("");
+    setUsername("");
+    setPassword("");
+    setRole("admin");
     setIsCreateOpen(true);
   };
 
@@ -107,94 +111,116 @@ export default function DashboardPage() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/positions`, {
+      // Tries POST /users first; falls back to POST /auth/register if /users is GET-only
+      let res = await fetch(`${API_BASE_URL}/users`, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify({
-          position_code: positionCode,
-          position_name: positionName,
+          username,
+          password,
+          role,
         }),
       });
 
-      if (!res.ok) throw new Error("Failed to create position");
+      if (res.status === 404 || res.status === 405) {
+        res = await fetch(`${API_BASE_URL}/auth/register`, {
+          method: "POST",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({
+            username,
+            password,
+            role,
+          }),
+        });
+      }
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || "Failed to create user");
+      }
 
       setIsCreateOpen(false);
-      await fetchPositions();
+      await fetchUsers();
     } catch (err: any) {
-      alert(err.message || "Error creating position");
+      alert(err.message || "Error creating user");
     } finally {
       setSubmitting(false);
     }
   };
 
-  // VIEW SINGLE POSITION
-  const handleRead = (pos: Position) => {
-    setSelectedPosition(pos);
+  // VIEW SINGLE USER
+  const handleRead = (user: User) => {
+    setSelectedUser(user);
     setIsViewOpen(true);
   };
 
-  // UPDATE POSITION
-  const openEditModal = (pos: Position) => {
-    setSelectedPosition(pos);
-    setPositionCode(pos.position_code);
-    setPositionName(pos.position_name);
+  // UPDATE USER
+  const openEditModal = (user: User) => {
+    setSelectedUser(user);
+    setUsername(user.username);
+    setPassword("");
+    setRole(user.role === "admin" ? "admin" : "user");
     setIsEditOpen(true);
   };
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedPosition) return;
+    if (!selectedUser) return;
 
     setSubmitting(true);
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/positions/${selectedPosition.id}`,
-        {
-          method: "PATCH",
-          headers: getAuthHeaders(),
-          body: JSON.stringify({
-            position_code: positionCode,
-            position_name: positionName,
-          }),
-        }
-      );
+      const payload: Record<string, string> = {
+        username,
+        role,
+      };
+      if (password.trim() !== "") {
+        payload.password = password;
+      }
 
-      if (!res.ok) throw new Error("Failed to update position");
+      const res = await fetch(`${API_BASE_URL}/users/${selectedUser.id}`, {
+        method: "PATCH",
+        headers: getAuthHeaders(),
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || "Failed to update user");
+      }
 
       setIsEditOpen(false);
-      setSelectedPosition(null);
-      await fetchPositions();
+      setSelectedUser(null);
+      await fetchUsers();
     } catch (err: any) {
-      alert(err.message || "Error updating position");
+      alert(err.message || "Error updating user");
     } finally {
       setSubmitting(false);
     }
   };
 
-  // DELETE POSITION (Triggers the exact browser confirm dialog shown in screenshot)
+  // DELETE USER
   const handleDelete = async (id: number) => {
     const confirmed = window.confirm(
-      `Are you sure you want to delete Position #${id}?`
+      `Are you sure you want to delete User #${id}?`
     );
     if (!confirmed) return;
 
     try {
-      const res = await fetch(`${API_BASE_URL}/positions/${id}`, {
+      const res = await fetch(`${API_BASE_URL}/users/${id}`, {
         method: "DELETE",
         headers: getAuthHeaders(),
       });
 
-      if (!res.ok) throw new Error(`Failed to delete Position #${id}`);
+      if (!res.ok) throw new Error(`Failed to delete User #${id}`);
 
-      await fetchPositions();
+      await fetchUsers();
     } catch (err: any) {
-      alert(err.message || "Error deleting position");
+      alert(err.message || "Error deleting user");
     }
   };
 
-  // Format date like "11/8/2026"
   const formatDate = (dateString?: string) => {
-    if (!dateString) return "N/A";
+    if (!dateString) return "Active";
     const date = new Date(dateString);
     if (isNaN(date.getTime())) return dateString;
     return date.toLocaleDateString("en-US");
@@ -210,7 +236,7 @@ export default function DashboardPage() {
               Dashboard
             </h1>
             <p className="text-sm text-gray-500 mt-1">
-              Manage organization positions
+              Manage system users and admin accounts
             </p>
           </div>
 
@@ -228,15 +254,18 @@ export default function DashboardPage() {
           {/* Card Header */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Positions</h2>
+              <h2 className="text-lg font-semibold text-gray-900">
+                Users &amp; Admins
+              </h2>
               <p className="text-sm text-gray-500">
-                A list of all positions stored in the backend.
+                A list of all registered users and administrators stored in the
+                backend.
               </p>
             </div>
 
             <div className="flex items-center gap-3">
               <button
-                onClick={fetchPositions}
+                onClick={fetchUsers}
                 disabled={loading}
                 className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer disabled:opacity-50"
               >
@@ -251,7 +280,7 @@ export default function DashboardPage() {
                 className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-neutral-900 hover:bg-neutral-800 rounded-lg transition-colors cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
-                Create Position
+                Add User / Admin
               </button>
             </div>
           </div>
@@ -263,55 +292,70 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Positions Table */}
+          {/* Users Table */}
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-gray-200 text-xs font-semibold text-gray-700">
                   <th className="py-3.5 px-4">ID</th>
-                  <th className="py-3.5 px-4">Position Code</th>
-                  <th className="py-3.5 px-4">Position Name</th>
-                  <th className="py-3.5 px-4">Created At</th>
+                  <th className="py-3.5 px-4">Username</th>
+                  <th className="py-3.5 px-4">Role</th>
+                  <th className="py-3.5 px-4">Created At / Status</th>
                   <th className="py-3.5 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 text-sm text-gray-700">
-                {loading && positions.length === 0 ? (
+                {loading && users.length === 0 ? (
                   <tr>
                     <td
                       colSpan={5}
                       className="py-8 text-center text-gray-400"
                     >
-                      Loading positions...
+                      Loading users...
                     </td>
                   </tr>
-                ) : positions.length === 0 ? (
+                ) : users.length === 0 ? (
                   <tr>
                     <td
                       colSpan={5}
                       className="py-8 text-center text-gray-400"
                     >
-                      No positions found. Click &quot;Create Position&quot; to add one.
+                      No users found. Click &quot;Add User / Admin&quot; to
+                      create one.
                     </td>
                   </tr>
                 ) : (
-                  positions.map((pos) => (
+                  users.map((user) => (
                     <tr
-                      key={pos.id}
+                      key={user.id}
                       className="hover:bg-gray-50/80 transition-colors"
                     >
                       <td className="py-3.5 px-4 font-medium text-gray-900">
-                        {pos.id}
+                        {user.id}
                       </td>
-                      <td className="py-3.5 px-4">{pos.position_code}</td>
-                      <td className="py-3.5 px-4">{pos.position_name}</td>
+                      <td className="py-3.5 px-4 font-medium">
+                        {user.username}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        {user.role === "admin" ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <ShieldCheck className="w-3.5 h-3.5" />
+                            admin
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                            <UserIcon className="w-3.5 h-3.5" />
+                            {user.role || "user"}
+                          </span>
+                        )}
+                      </td>
                       <td className="py-3.5 px-4 text-gray-600">
-                        {formatDate(pos.created_at)}
+                        {formatDate(user.created_at)}
                       </td>
                       <td className="py-3.5 px-4">
                         <div className="flex items-center justify-end gap-2">
                           <button
-                            onClick={() => handleRead(pos)}
+                            onClick={() => handleRead(user)}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-md hover:bg-gray-50 transition-colors cursor-pointer"
                           >
                             <Eye className="w-3.5 h-3.5" />
@@ -319,7 +363,7 @@ export default function DashboardPage() {
                           </button>
 
                           <button
-                            onClick={() => openEditModal(pos)}
+                            onClick={() => openEditModal(user)}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-md hover:bg-gray-50 transition-colors cursor-pointer"
                           >
                             <Pencil className="w-3.5 h-3.5" />
@@ -327,7 +371,7 @@ export default function DashboardPage() {
                           </button>
 
                           <button
-                            onClick={() => handleDelete(pos.id)}
+                            onClick={() => handleDelete(user.id)}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-md transition-colors cursor-pointer"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -344,13 +388,13 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* CREATE MODAL */}
+      {/* CREATE USER / ADMIN MODAL */}
       {isCreateOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-xl shadow-lg w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">
-                Create Position
+                Add User / Admin
               </h3>
               <button
                 onClick={() => setIsCreateOpen(false)}
@@ -363,30 +407,44 @@ export default function DashboardPage() {
             <form onSubmit={handleCreate} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Position Code
+                  Username
                 </label>
                 <input
                   type="text"
                   required
-                  value={positionCode}
-                  onChange={(e) => setPositionCode(e.target.value)}
-                  placeholder="e.g., Pres"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="e.g., admin02"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Position Name
+                  Password
                 </label>
                 <input
-                  type="text"
+                  type="password"
                   required
-                  value={positionName}
-                  onChange={(e) => setPositionName(e.target.value)}
-                  placeholder="e.g., President"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter password"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Role
+                </label>
+                <select
+                  value={role}
+                  onChange={(e) => setRole(e.target.value as "user" | "admin")}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-neutral-900"
+                >
+                  <option value="admin">Admin (admin)</option>
+                  <option value="user">User (user)</option>
+                </select>
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
@@ -402,7 +460,7 @@ export default function DashboardPage() {
                   disabled={submitting}
                   className="px-4 py-2 text-sm font-medium text-white bg-neutral-900 hover:bg-neutral-800 rounded-lg cursor-pointer disabled:opacity-50"
                 >
-                  {submitting ? "Saving..." : "Save Position"}
+                  {submitting ? "Creating..." : "Create Account"}
                 </button>
               </div>
             </form>
@@ -410,13 +468,13 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* UPDATE MODAL */}
-      {isEditOpen && selectedPosition && (
+      {/* UPDATE USER MODAL */}
+      {isEditOpen && selectedUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-xl shadow-lg w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">
-                Update Position #{selectedPosition.id}
+                Update User #{selectedUser.id}
               </h3>
               <button
                 onClick={() => setIsEditOpen(false)}
@@ -429,28 +487,45 @@ export default function DashboardPage() {
             <form onSubmit={handleUpdate} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Position Code
+                  Username
                 </label>
                 <input
                   type="text"
                   required
-                  value={positionCode}
-                  onChange={(e) => setPositionCode(e.target.value)}
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Position Name
+                  New Password{" "}
+                  <span className="text-xs font-normal text-gray-400">
+                    (leave blank to keep current)
+                  </span>
                 </label>
                 <input
-                  type="text"
-                  required
-                  value={positionName}
-                  onChange={(e) => setPositionName(e.target.value)}
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Role
+                </label>
+                <select
+                  value={role}
+                  onChange={(e) => setRole(e.target.value as "user" | "admin")}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-neutral-900"
+                >
+                  <option value="admin">Admin (admin)</option>
+                  <option value="user">User (user)</option>
+                </select>
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
@@ -466,7 +541,7 @@ export default function DashboardPage() {
                   disabled={submitting}
                   className="px-4 py-2 text-sm font-medium text-white bg-neutral-900 hover:bg-neutral-800 rounded-lg cursor-pointer disabled:opacity-50"
                 >
-                  {submitting ? "Updating..." : "Update Position"}
+                  {submitting ? "Updating..." : "Update User"}
                 </button>
               </div>
             </form>
@@ -475,12 +550,12 @@ export default function DashboardPage() {
       )}
 
       {/* READ / VIEW DETAILS MODAL */}
-      {isViewOpen && selectedPosition && (
+      {isViewOpen && selectedUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-xl shadow-lg w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">
-                Position Details
+                User Details
               </h3>
               <button
                 onClick={() => setIsViewOpen(false)}
@@ -493,24 +568,22 @@ export default function DashboardPage() {
             <div className="space-y-3 text-sm">
               <div className="flex justify-between py-2 border-b border-gray-100">
                 <span className="font-medium text-gray-500">ID</span>
-                <span className="text-gray-900">{selectedPosition.id}</span>
+                <span className="text-gray-900">{selectedUser.id}</span>
               </div>
               <div className="flex justify-between py-2 border-b border-gray-100">
-                <span className="font-medium text-gray-500">Position Code</span>
-                <span className="text-gray-900">
-                  {selectedPosition.position_code}
-                </span>
+                <span className="font-medium text-gray-500">Username</span>
+                <span className="text-gray-900">{selectedUser.username}</span>
               </div>
               <div className="flex justify-between py-2 border-b border-gray-100">
-                <span className="font-medium text-gray-500">Position Name</span>
-                <span className="text-gray-900">
-                  {selectedPosition.position_name}
+                <span className="font-medium text-gray-500">Role</span>
+                <span className="font-semibold text-gray-900">
+                  {selectedUser.role}
                 </span>
               </div>
               <div className="flex justify-between py-2">
-                <span className="font-medium text-gray-500">Created At</span>
+                <span className="font-medium text-gray-500">Status</span>
                 <span className="text-gray-900">
-                  {formatDate(selectedPosition.created_at)}
+                  {formatDate(selectedUser.created_at)}
                 </span>
               </div>
             </div>
