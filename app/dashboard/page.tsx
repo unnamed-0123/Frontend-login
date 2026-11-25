@@ -14,8 +14,20 @@ import {
   Stethoscope,
   User as UserIcon,
 } from "lucide-react";
+import PatientsManager, { Patient } from "@/components/hms/PatientsManager";
+import DoctorsManager from "@/components/hms/DoctorsManager";
+import AppointmentsManager from "@/components/hms/AppointmentsManager";
+import MedicalRecordsManager from "@/components/hms/MedicalRecordsManager";
+import PrescriptionsManager from "@/components/hms/PrescriptionsManager";
 
 type DisplayRole = "patient" | "doctor" | "admin";
+type DashboardTab =
+  | "accounts"
+  | "patients"
+  | "doctors"
+  | "appointments"
+  | "records"
+  | "prescriptions";
 
 interface User {
   id: number;
@@ -27,8 +39,33 @@ interface User {
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "https://midterm-2-c6vw.onrender.com";
 
+const ALL_TABS: { id: DashboardTab; label: string; roles: DisplayRole[] }[] = [
+  { id: "accounts", label: "User Accounts", roles: ["admin"] },
+  { id: "appointments", label: "Appointments", roles: ["admin", "doctor", "patient"] },
+  { id: "patients", label: "Patients", roles: ["admin", "doctor"] },
+  { id: "doctors", label: "Doctors", roles: ["admin", "doctor", "patient"] },
+  { id: "records", label: "Medical Records", roles: ["admin", "doctor", "patient"] },
+  { id: "prescriptions", label: "Prescriptions", roles: ["admin", "doctor", "patient"] },
+];
+
+function getRoleFromToken(token: string | null): string | null {
+  if (!token) return null;
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    return payload.role || null;
+  } catch {
+    return null;
+  }
+}
+
 export default function DashboardPage() {
   const router = useRouter();
+
+  const [currentRole, setCurrentRole] = useState<DisplayRole>("patient");
+  const [currentUsername, setCurrentUsername] = useState<string>("");
+  const [currentPatientId, setCurrentPatientId] = useState<number | null>(null);
+  const [currentPatientName, setCurrentPatientName] = useState<string>("");
+  const [activeTab, setActiveTab] = useState<DashboardTab>("appointments");
 
   const [users, setUsers] = useState<User[]>([]);
   const [roleMap, setRoleMap] = useState<Record<string, DisplayRole>>({});
@@ -80,7 +117,8 @@ export default function DashboardPage() {
       return (
         localStorage.getItem("hms_token") ||
         localStorage.getItem("token") ||
-        localStorage.getItem("access_token")
+        localStorage.getItem("access_token") ||
+        localStorage.getItem("jwt")
       );
     }
     return null;
@@ -94,7 +132,97 @@ export default function DashboardPage() {
     };
   };
 
-  // READ / FETCH ALL USERS
+  // Resolve logged-in user session, role, and linked patient profile
+  useEffect(() => {
+    const token = getToken();
+    const storedUser = localStorage.getItem("hms_user");
+
+    if (!token) {
+      router.push("/login");
+      return;
+    }
+
+    const savedRoles = loadLocalRoles();
+    setRoleMap(savedRoles);
+
+    let parsed: { username?: string; role?: string } = {};
+    if (storedUser) {
+      try {
+        parsed = JSON.parse(storedUser);
+      } catch {
+        parsed = {};
+      }
+    }
+
+    const uname = parsed.username || "";
+    setCurrentUsername(uname);
+
+    const tokenRole = getRoleFromToken(token);
+    const localRole = savedRoles[uname.trim().toLowerCase()] || savedRoles[uname];
+
+    let resolved: DisplayRole = "patient";
+    if (tokenRole === "admin" || parsed.role === "admin" || localRole === "admin") {
+      resolved = "admin";
+    } else if (
+      tokenRole === "doctor" ||
+      parsed.role === "doctor" ||
+      localRole === "doctor"
+    ) {
+      resolved = "doctor";
+    }
+
+    setCurrentRole(resolved);
+    setActiveTab(resolved === "admin" ? "accounts" : "appointments");
+
+    // If patient, resolve their patient_id from local map or /patients endpoint
+    if (resolved === "patient" && uname) {
+      const cleanKey = uname.trim().toLowerCase();
+      let cachedEntry: { patient_id?: number; full_name?: string } = {};
+      try {
+        const map = JSON.parse(localStorage.getItem("hms_patient_map") || "{}");
+        cachedEntry = map[cleanKey] || {};
+      } catch {
+        cachedEntry = {};
+      }
+
+      if (cachedEntry.patient_id) {
+        setCurrentPatientId(Number(cachedEntry.patient_id));
+      }
+      if (cachedEntry.full_name) {
+        setCurrentPatientName(cachedEntry.full_name);
+      }
+
+      fetch(`${API_BASE_URL}/patients`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((res) => (res.ok ? res.json() : []))
+        .then((list: Patient[]) => {
+          if (!Array.isArray(list)) return;
+          const match =
+            list.find((p) => p.patient_id === Number(cachedEntry.patient_id)) ||
+            list.find(
+              (p) =>
+                `${p.first_name} ${p.last_name}`.trim().toLowerCase() ===
+                (cachedEntry.full_name || cleanKey),
+            ) ||
+            list.find(
+              (p) =>
+                p.first_name?.toLowerCase() === cleanKey ||
+                p.email?.toLowerCase().startsWith(`${cleanKey}@`),
+            );
+
+          if (match) {
+            setCurrentPatientId(match.patient_id);
+            setCurrentPatientName(
+              `${match.first_name} ${match.last_name}`.trim().toLowerCase(),
+            );
+          }
+        })
+        .catch(() => {});
+    }
+  }, [router]);
+
+  // READ / FETCH ALL USERS (Admin only)
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -105,8 +233,11 @@ export default function DashboardPage() {
         headers: getAuthHeaders(),
       });
 
-      if (res.status === 401) {
-        router.push("/login");
+      if (res.status === 401 || res.status === 403) {
+        setError(
+          "Unauthorized to load user accounts (401/403). Check backend JwtAuthGuard or re-login."
+        );
+        setLoading(false);
         return;
       }
 
@@ -121,18 +252,21 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [router]);
+  }, []);
 
   useEffect(() => {
-    fetchUsers();
-  }, [fetchUsers]);
+    if (currentRole === "admin") {
+      fetchUsers();
+    }
+  }, [currentRole, fetchUsers]);
 
-  // LOGOUT (keeps hms_roles intact so frontend role labels persist across logins)
+  // LOGOUT
   const handleLogout = () => {
     localStorage.removeItem("hms_token");
     localStorage.removeItem("hms_user");
     localStorage.removeItem("token");
     localStorage.removeItem("access_token");
+    localStorage.removeItem("jwt");
     router.push("/login");
   };
 
@@ -188,13 +322,11 @@ export default function DashboardPage() {
     }
   };
 
-  // VIEW SINGLE ACCOUNT
   const handleRead = (user: User) => {
     setSelectedUser(user);
     setIsViewOpen(true);
   };
 
-  // UPDATE ACCOUNT
   const openEditModal = (user: User) => {
     setSelectedUser(user);
     setUsername(user.username);
@@ -249,7 +381,6 @@ export default function DashboardPage() {
     }
   };
 
-  // DELETE ACCOUNT
   const handleDelete = async (id: number) => {
     const confirmed = window.confirm(
       `Are you sure you want to delete Account #${id}?`
@@ -302,17 +433,28 @@ export default function DashboardPage() {
     );
   };
 
+  const visibleTabs = ALL_TABS.filter((tab) => tab.roles.includes(currentRole));
+
   return (
     <div className="min-h-screen bg-[#fafafa] text-gray-900 py-10 px-4 sm:px-8">
       <div className="max-w-6xl mx-auto">
         {/* Top Header */}
-        <div className="flex items-start justify-between pb-6 mb-8 border-b border-gray-200">
+        <div className="flex items-start justify-between pb-6 mb-6 border-b border-gray-200">
           <div>
-            <h1 className="text-3xl font-bold font-serif tracking-tight text-gray-900">
-              Dashboard
-            </h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-3xl font-bold font-serif tracking-tight text-gray-900">
+                Dashboard
+              </h1>
+              {renderRoleBadge(currentRole)}
+            </div>
             <p className="text-sm text-gray-500 mt-1">
-              Manage patients, doctors, and admin accounts
+              {currentUsername ? `Signed in as ${currentUsername} • ` : ""}
+              {currentRole === "admin" &&
+                "Full system & clinical operations access"}
+              {currentRole === "doctor" &&
+                "Clinical care, patient records & schedule portal"}
+              {currentRole === "patient" &&
+                "Personal appointments, medical records & prescriptions"}
             </p>
           </div>
 
@@ -325,132 +467,173 @@ export default function DashboardPage() {
           </button>
         </div>
 
-        {/* Main Card Container */}
-        <div className="bg-white border border-gray-200 rounded-xl shadow-xs p-6">
-          {/* Card Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">
-                Patients, Doctors &amp; Admins
-              </h2>
-              <p className="text-sm text-gray-500">
-                A list of all registered accounts stored in the system.
-              </p>
+        {/* Role-Filtered Navigation Tabs */}
+        <div className="flex flex-wrap gap-2 mb-6">
+          {visibleTabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors cursor-pointer ${
+                activeTab === tab.id
+                  ? "bg-neutral-900 text-white shadow-xs"
+                  : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* TAB 1: USER ACCOUNTS (Admin Only) */}
+        {activeTab === "accounts" && currentRole === "admin" && (
+          <div className="bg-white border border-gray-200 rounded-xl shadow-xs p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">
+                  Patients, Doctors &amp; Admins
+                </h2>
+                <p className="text-sm text-gray-500">
+                  A list of all registered accounts stored in the system.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={fetchUsers}
+                  disabled={loading}
+                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw
+                    className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
+                  />
+                  Read / Refresh
+                </button>
+
+                <button
+                  onClick={openCreateModal}
+                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-neutral-900 hover:bg-neutral-800 rounded-lg transition-colors cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Account
+                </button>
+              </div>
             </div>
 
-            <div className="flex items-center gap-3">
-              <button
-                onClick={fetchUsers}
-                disabled={loading}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer disabled:opacity-50"
-              >
-                <RefreshCw
-                  className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
-                />
-                Read / Refresh
-              </button>
+            {error && (
+              <div className="mb-4 p-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg">
+                {error}
+              </div>
+            )}
 
-              <button
-                onClick={openCreateModal}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-neutral-900 hover:bg-neutral-800 rounded-lg transition-colors cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                Add Account
-              </button>
-            </div>
-          </div>
-
-          {/* Error Banner */}
-          {error && (
-            <div className="mb-4 p-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg">
-              {error}
-            </div>
-          )}
-
-          {/* Users Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-gray-200 text-xs font-semibold text-gray-700">
-                  <th className="py-3.5 px-4">ID</th>
-                  <th className="py-3.5 px-4">Username</th>
-                  <th className="py-3.5 px-4">Role</th>
-                  <th className="py-3.5 px-4">Created At / Status</th>
-                  <th className="py-3.5 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 text-sm text-gray-700">
-                {loading && users.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={5}
-                      className="py-8 text-center text-gray-400"
-                    >
-                      Loading accounts...
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-gray-200 text-xs font-semibold text-gray-700">
+                    <th className="py-3.5 px-4">ID</th>
+                    <th className="py-3.5 px-4">Username</th>
+                    <th className="py-3.5 px-4">Role</th>
+                    <th className="py-3.5 px-4">Created At / Status</th>
+                    <th className="py-3.5 px-4 text-right">Actions</th>
                   </tr>
-                ) : users.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={5}
-                      className="py-8 text-center text-gray-400"
-                    >
-                      No accounts found. Click &quot;Add Account&quot; to
-                      create one.
-                    </td>
-                  </tr>
-                ) : (
-                  users.map((user) => (
-                    <tr
-                      key={user.id}
-                      className="hover:bg-gray-50/80 transition-colors"
-                    >
-                      <td className="py-3.5 px-4 font-medium text-gray-900">
-                        {user.id}
-                      </td>
-                      <td className="py-3.5 px-4 font-medium">
-                        {user.username}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        {renderRoleBadge(resolveDisplayRole(user))}
-                      </td>
-                      <td className="py-3.5 px-4 text-gray-600">
-                        {formatDate(user.created_at)}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => handleRead(user)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-md hover:bg-gray-50 transition-colors cursor-pointer"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                            Read
-                          </button>
-
-                          <button
-                            onClick={() => openEditModal(user)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-md hover:bg-gray-50 transition-colors cursor-pointer"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                            Update
-                          </button>
-
-                          <button
-                            onClick={() => handleDelete(user.id)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-md transition-colors cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            Delete
-                          </button>
-                        </div>
+                </thead>
+                <tbody className="divide-y divide-gray-100 text-sm text-gray-700">
+                  {loading && users.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-8 text-center text-gray-400">
+                        Loading accounts...
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : users.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-8 text-center text-gray-400">
+                        No accounts found. Click &quot;Add Account&quot; to
+                        create one.
+                      </td>
+                    </tr>
+                  ) : (
+                    users.map((user) => (
+                      <tr
+                        key={user.id}
+                        className="hover:bg-gray-50/80 transition-colors"
+                      >
+                        <td className="py-3.5 px-4 font-medium text-gray-900">
+                          {user.id}
+                        </td>
+                        <td className="py-3.5 px-4 font-medium">
+                          {user.username}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          {renderRoleBadge(resolveDisplayRole(user))}
+                        </td>
+                        <td className="py-3.5 px-4 text-gray-600">
+                          {formatDate(user.created_at)}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => handleRead(user)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-md hover:bg-gray-50 transition-colors cursor-pointer"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              Read
+                            </button>
+
+                            <button
+                              onClick={() => openEditModal(user)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-md hover:bg-gray-50 transition-colors cursor-pointer"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                              Update
+                            </button>
+
+                            <button
+                              onClick={() => handleDelete(user.id)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-md transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* ROLE-AWARE HMS MODULES */}
+        {activeTab === "patients" && currentRole !== "patient" && (
+          <PatientsManager canEdit={currentRole === "admin" || currentRole === "doctor"} />
+        )}
+        {activeTab === "doctors" && (
+          <DoctorsManager canEdit={currentRole === "admin"} />
+        )}
+        {activeTab === "appointments" && (
+          <AppointmentsManager
+            canEdit={currentRole === "admin" || currentRole === "doctor"}
+            canBook={true}
+            bookingPatientId={currentRole === "patient" ? currentPatientId : undefined}
+          />
+        )}
+        {activeTab === "records" && (
+          <MedicalRecordsManager
+            canEdit={currentRole === "admin" || currentRole === "doctor"}
+            isPatient={currentRole === "patient"}
+            filterPatientId={currentPatientId}
+            filterPatientName={currentPatientName}
+          />
+        )}
+        {activeTab === "prescriptions" && (
+          <PrescriptionsManager
+            canEdit={currentRole === "admin" || currentRole === "doctor"}
+            isPatient={currentRole === "patient"}
+            filterPatientId={currentPatientId}
+            filterPatientName={currentPatientName}
+          />
+        )}
       </div>
 
       {/* CREATE ACCOUNT MODAL */}
