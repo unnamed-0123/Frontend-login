@@ -7,14 +7,17 @@ export interface Doctor {
   doctor_id: number;
   first_name: string;
   last_name: string;
-  specialty?: string;
   specialization?: string;
-  email: string;
-  licence?: string;
-  years_of_experience?: number;
+  specialty?: string;
+  phone?: string;
+  email?: string;
 }
 
-export default function DoctorsManager({ canEdit = true }: { canEdit?: boolean }) {
+export default function DoctorsManager({
+  canEdit = true,
+}: {
+  canEdit?: boolean;
+}) {
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -23,13 +26,12 @@ export default function DoctorsManager({ canEdit = true }: { canEdit?: boolean }
   const [form, setForm] = useState({
     first_name: '',
     last_name: '',
-    specialty: '',
+    specialization: '',
+    phone: '',
     email: '',
-    licence: '',
-    years_of_experience: '',
   });
 
-  const authHeaders = () => {
+  const authHeaders = (): Record<string, string> => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('hms_token') : '';
     return token ? { Authorization: `Bearer ${token}` } : {};
   };
@@ -37,7 +39,9 @@ export default function DoctorsManager({ canEdit = true }: { canEdit?: boolean }
   const fetchDoctors = async () => {
     try {
       setLoading(true);
-      const data = await apiRequest<Doctor[]>('/doctors', { headers: authHeaders() });
+      const data = await apiRequest<Doctor[]>('/doctors', {
+        headers: authHeaders(),
+      });
       setDoctors(Array.isArray(data) ? data : []);
       setError('');
     } catch (err) {
@@ -55,10 +59,9 @@ export default function DoctorsManager({ canEdit = true }: { canEdit?: boolean }
     setForm({
       first_name: '',
       last_name: '',
-      specialty: '',
+      specialization: '',
+      phone: '',
       email: '',
-      licence: '',
-      years_of_experience: '',
     });
     setEditingId(null);
   };
@@ -67,15 +70,16 @@ export default function DoctorsManager({ canEdit = true }: { canEdit?: boolean }
     e.preventDefault();
     if (!canEdit) return;
     setError('');
+
+    const payload = {
+      first_name: form.first_name.trim(),
+      last_name: form.last_name.trim(),
+      specialization: form.specialization.trim(),
+      phone: form.phone.trim() || undefined,
+      email: form.email.trim() || undefined,
+    };
+
     try {
-      const payload = {
-        first_name: form.first_name,
-        last_name: form.last_name,
-        specialty: form.specialty,
-        email: form.email,
-        licence: form.licence,
-        years_of_experience: Number(form.years_of_experience) || 0,
-      };
       if (editingId !== null) {
         await apiRequest(`/doctors/${editingId}`, {
           method: 'PUT',
@@ -97,21 +101,20 @@ export default function DoctorsManager({ canEdit = true }: { canEdit?: boolean }
   };
 
   const handleEdit = (d: Doctor) => {
+    if (!canEdit) return;
     setEditingId(d.doctor_id);
     setForm({
       first_name: d.first_name || '',
       last_name: d.last_name || '',
-      specialty: d.specialty || d.specialization || '',
+      specialization: d.specialization || d.specialty || '',
+      phone: d.phone || '',
       email: d.email || '',
-      licence: d.licence || '',
-      years_of_experience:
-        d.years_of_experience !== undefined ? String(d.years_of_experience) : '',
     });
   };
 
   const handleDelete = async (id: number) => {
     if (!canEdit) return;
-    if (!confirm('Remove this doctor from the directory?')) return;
+    if (!confirm('Delete this doctor record?')) return;
     try {
       await apiRequest(`/doctors/${id}`, {
         method: 'DELETE',
@@ -144,6 +147,7 @@ export default function DoctorsManager({ canEdit = true }: { canEdit?: boolean }
               onChange={(e) => setForm({ ...form, first_name: e.target.value })}
               className="rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
             />
+
             <input
               type="text"
               required
@@ -152,45 +156,38 @@ export default function DoctorsManager({ canEdit = true }: { canEdit?: boolean }
               onChange={(e) => setForm({ ...form, last_name: e.target.value })}
               className="rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
             />
+
             <input
               type="text"
               required
-              placeholder="Specialty (e.g. Cardiology)"
-              value={form.specialty}
-              onChange={(e) => setForm({ ...form, specialty: e.target.value })}
+              placeholder="Specialization (e.g. Cardiology)"
+              value={form.specialization}
+              onChange={(e) => setForm({ ...form, specialization: e.target.value })}
               className="rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
             />
+
+            <input
+              type="text"
+              placeholder="Phone Number"
+              value={form.phone}
+              onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              className="rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
+            />
+
             <input
               type="email"
-              required
               placeholder="Email Address"
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
               className="rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
             />
-            <input
-              type="text"
-              required
-              placeholder="License No. (e.g. PRC-012345)"
-              value={form.licence}
-              onChange={(e) => setForm({ ...form, licence: e.target.value })}
-              className="rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
-            />
-            <input
-              type="number"
-              min={0}
-              required
-              placeholder="Years of Experience"
-              value={form.years_of_experience}
-              onChange={(e) => setForm({ ...form, years_of_experience: e.target.value })}
-              className="rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
-            />
+
             <div className="flex gap-2 sm:col-span-2 lg:col-span-3">
               <button
                 type="submit"
                 className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-700"
               >
-                {editingId !== null ? 'Update Doctor' : 'Save Doctor'}
+                {editingId !== null ? 'Update Doctor' : 'Add Doctor'}
               </button>
               {editingId !== null && (
                 <button
@@ -213,24 +210,22 @@ export default function DoctorsManager({ canEdit = true }: { canEdit?: boolean }
               <tr>
                 <th className="px-4 py-3">ID</th>
                 <th className="px-4 py-3">Doctor</th>
-                <th className="px-4 py-3">Specialty</th>
-                <th className="px-4 py-3">Email</th>
-                <th className="px-4 py-3">License</th>
-                <th className="px-4 py-3">Experience</th>
+                <th className="px-4 py-3">Specialization</th>
+                <th className="px-4 py-3">Contact</th>
                 {canEdit && <th className="px-4 py-3 text-right">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
               {loading ? (
                 <tr>
-                  <td colSpan={canEdit ? 7 : 6} className="px-4 py-6 text-center text-slate-500">
+                  <td colSpan={canEdit ? 5 : 4} className="px-4 py-6 text-center text-slate-500">
                     Loading doctors...
                   </td>
                 </tr>
               ) : doctors.length === 0 ? (
                 <tr>
-                  <td colSpan={canEdit ? 7 : 6} className="px-4 py-6 text-center text-slate-500">
-                    No doctors listed yet.
+                  <td colSpan={canEdit ? 5 : 4} className="px-4 py-6 text-center text-slate-500">
+                    No doctors found.
                   </td>
                 </tr>
               ) : (
@@ -240,15 +235,10 @@ export default function DoctorsManager({ canEdit = true }: { canEdit?: boolean }
                     <td className="px-4 py-3 font-medium text-slate-900">
                       Dr. {d.first_name} {d.last_name}
                     </td>
+                    <td className="px-4 py-3">{d.specialization || d.specialty || '—'}</td>
                     <td className="px-4 py-3">
-                      <span className="rounded-full bg-teal-50 px-2.5 py-0.5 text-xs font-medium text-teal-700">
-                        {d.specialty || d.specialization || 'General'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">{d.email}</td>
-                    <td className="px-4 py-3">{d.licence || '—'}</td>
-                    <td className="px-4 py-3">
-                      {d.years_of_experience !== undefined ? `${d.years_of_experience} yrs` : '—'}
+                      <div>{d.phone || '—'}</div>
+                      {d.email && <div className="text-xs text-slate-400">{d.email}</div>}
                     </td>
                     {canEdit && (
                       <td className="px-4 py-3 text-right space-x-2">

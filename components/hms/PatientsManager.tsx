@@ -7,13 +7,17 @@ export interface Patient {
   patient_id: number;
   first_name: string;
   last_name: string;
-  birth_date: string;
+  date_of_birth?: string;
+  gender?: string;
+  phone?: string;
   email?: string;
-  phone: string | number;
-  address?: string;
 }
 
-export default function PatientsManager({ canEdit = true }: { canEdit?: boolean }) {
+export default function PatientsManager({
+  canEdit = true,
+}: {
+  canEdit?: boolean;
+}) {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -22,13 +26,13 @@ export default function PatientsManager({ canEdit = true }: { canEdit?: boolean 
   const [form, setForm] = useState({
     first_name: '',
     last_name: '',
-    birth_date: '',
-    email: '',
+    date_of_birth: '',
+    gender: '',
     phone: '',
-    address: '',
+    email: '',
   });
 
-  const authHeaders = () => {
+  const authHeaders = (): Record<string, string> => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('hms_token') : '';
     return token ? { Authorization: `Bearer ${token}` } : {};
   };
@@ -36,7 +40,9 @@ export default function PatientsManager({ canEdit = true }: { canEdit?: boolean 
   const fetchPatients = async () => {
     try {
       setLoading(true);
-      const data = await apiRequest<Patient[]>('/patients', { headers: authHeaders() });
+      const data = await apiRequest<Patient[]>('/patients', {
+        headers: authHeaders(),
+      });
       setPatients(Array.isArray(data) ? data : []);
       setError('');
     } catch (err) {
@@ -51,7 +57,14 @@ export default function PatientsManager({ canEdit = true }: { canEdit?: boolean 
   }, []);
 
   const resetForm = () => {
-    setForm({ first_name: '', last_name: '', birth_date: '', email: '', phone: '', address: '' });
+    setForm({
+      first_name: '',
+      last_name: '',
+      date_of_birth: '',
+      gender: '',
+      phone: '',
+      email: '',
+    });
     setEditingId(null);
   };
 
@@ -59,18 +72,28 @@ export default function PatientsManager({ canEdit = true }: { canEdit?: boolean 
     e.preventDefault();
     if (!canEdit) return;
     setError('');
+
+    const payload = {
+      first_name: form.first_name.trim(),
+      last_name: form.last_name.trim(),
+      date_of_birth: form.date_of_birth || undefined,
+      gender: form.gender || undefined,
+      phone: form.phone.trim() || undefined,
+      email: form.email.trim() || undefined,
+    };
+
     try {
       if (editingId !== null) {
         await apiRequest(`/patients/${editingId}`, {
           method: 'PUT',
           headers: authHeaders(),
-          body: JSON.stringify(form),
+          body: JSON.stringify(payload),
         });
       } else {
         await apiRequest('/patients', {
           method: 'POST',
           headers: authHeaders(),
-          body: JSON.stringify(form),
+          body: JSON.stringify(payload),
         });
       }
       resetForm();
@@ -81,14 +104,15 @@ export default function PatientsManager({ canEdit = true }: { canEdit?: boolean 
   };
 
   const handleEdit = (p: Patient) => {
+    if (!canEdit) return;
     setEditingId(p.patient_id);
     setForm({
       first_name: p.first_name || '',
       last_name: p.last_name || '',
-      birth_date: p.birth_date ? p.birth_date.split('T')[0] : '',
+      date_of_birth: p.date_of_birth ? String(p.date_of_birth).slice(0, 10) : '',
+      gender: p.gender || '',
+      phone: p.phone || '',
       email: p.email || '',
-      phone: String(p.phone || ''),
-      address: p.address || '',
     });
   };
 
@@ -111,7 +135,7 @@ export default function PatientsManager({ canEdit = true }: { canEdit?: boolean 
       {canEdit && (
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="text-lg font-bold text-slate-900">
-            {editingId !== null ? `Edit Patient #${editingId}` : 'Register New Patient'}
+            {editingId !== null ? `Edit Patient #${editingId}` : 'Register Patient'}
           </h2>
           {error && (
             <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
@@ -127,6 +151,7 @@ export default function PatientsManager({ canEdit = true }: { canEdit?: boolean 
               onChange={(e) => setForm({ ...form, first_name: e.target.value })}
               className="rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
             />
+
             <input
               type="text"
               required
@@ -135,36 +160,41 @@ export default function PatientsManager({ canEdit = true }: { canEdit?: boolean 
               onChange={(e) => setForm({ ...form, last_name: e.target.value })}
               className="rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
             />
+
             <input
               type="date"
-              required
-              value={form.birth_date}
-              onChange={(e) => setForm({ ...form, birth_date: e.target.value })}
+              value={form.date_of_birth}
+              onChange={(e) => setForm({ ...form, date_of_birth: e.target.value })}
               className="rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
             />
-            <input
-              type="email"
-              required
-              placeholder="Email Address"
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
+
+            <select
+              value={form.gender}
+              onChange={(e) => setForm({ ...form, gender: e.target.value })}
               className="rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
-            />
+            >
+              <option value="">Select Gender...</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Other">Other</option>
+            </select>
+
             <input
               type="text"
-              required
               placeholder="Phone Number"
               value={form.phone}
               onChange={(e) => setForm({ ...form, phone: e.target.value })}
               className="rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
             />
+
             <input
-              type="text"
-              placeholder="Address"
-              value={form.address}
-              onChange={(e) => setForm({ ...form, address: e.target.value })}
+              type="email"
+              placeholder="Email Address"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
               className="rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
             />
+
             <div className="flex gap-2 sm:col-span-2 lg:col-span-3">
               <button
                 type="submit"
@@ -193,24 +223,23 @@ export default function PatientsManager({ canEdit = true }: { canEdit?: boolean 
               <tr>
                 <th className="px-4 py-3">ID</th>
                 <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Birthday</th>
-                <th className="px-4 py-3">Email</th>
-                <th className="px-4 py-3">Phone</th>
-                <th className="px-4 py-3">Address</th>
+                <th className="px-4 py-3">Gender</th>
+                <th className="px-4 py-3">DOB</th>
+                <th className="px-4 py-3">Contact</th>
                 {canEdit && <th className="px-4 py-3 text-right">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
               {loading ? (
                 <tr>
-                  <td colSpan={canEdit ? 7 : 6} className="px-4 py-6 text-center text-slate-500">
+                  <td colSpan={canEdit ? 6 : 5} className="px-4 py-6 text-center text-slate-500">
                     Loading patients...
                   </td>
                 </tr>
               ) : patients.length === 0 ? (
                 <tr>
-                  <td colSpan={canEdit ? 7 : 6} className="px-4 py-6 text-center text-slate-500">
-                    No patients registered yet.
+                  <td colSpan={canEdit ? 6 : 5} className="px-4 py-6 text-center text-slate-500">
+                    No patients found.
                   </td>
                 </tr>
               ) : (
@@ -220,10 +249,14 @@ export default function PatientsManager({ canEdit = true }: { canEdit?: boolean 
                     <td className="px-4 py-3 font-medium text-slate-900">
                       {p.first_name} {p.last_name}
                     </td>
-                    <td className="px-4 py-3">{p.birth_date?.split('T')[0]}</td>
-                    <td className="px-4 py-3">{p.email || '—'}</td>
-                    <td className="px-4 py-3">{p.phone}</td>
-                    <td className="px-4 py-3">{p.address || '—'}</td>
+                    <td className="px-4 py-3">{p.gender || '—'}</td>
+                    <td className="px-4 py-3">
+                      {p.date_of_birth ? String(p.date_of_birth).slice(0, 10) : '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div>{p.phone || '—'}</div>
+                      {p.email && <div className="text-xs text-slate-400">{p.email}</div>}
+                    </td>
                     {canEdit && (
                       <td className="px-4 py-3 text-right space-x-2">
                         <button
