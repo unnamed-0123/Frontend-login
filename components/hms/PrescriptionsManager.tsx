@@ -38,7 +38,7 @@ export default function PrescriptionsManager({
     frequency: '',
   });
 
-  const authHeaders = () => {
+  const authHeaders = (): Record<string, string> => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('hms_token') : '';
     return token ? { Authorization: `Bearer ${token}` } : {};
   };
